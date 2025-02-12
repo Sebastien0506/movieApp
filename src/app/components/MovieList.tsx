@@ -1,62 +1,88 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import CategoryFilter from "./Filter";
 
-// Définir l'interface pour les films
+// On définit l'interface pour un film
 interface Movie {
     imdbID: string;
     Title: string;
     Poster: string;
     Year: string;
-    Category: string;
+    Genre: string;
     Likes: number;
     Dislikes: number;
 }
 
-// Dictionnaire d'images pour chaque film
-const movieImages: { [key: string]: string } = {
-    Titanic: "/img/titanic.jpg",
-    Deadpool: "/img/deadpool.jpg",
-    "Film 3": "/img/film3.jpg",
-    // Ajouter d'autres films et leurs images ici
-};
-
-const initialMovies: Movie[] = [
-    { imdbID: "1", Title: "Titanic", Poster: "https://via.placeholder.com/200", Year: "2022", Category: "Action", Likes: 0, Dislikes: 0 },
-    { imdbID: "2", Title: "Deadpool", Poster: "https://via.placeholder.com/200", Year: "2021", Category: "Drama", Likes: 0, Dislikes: 0 },
-    { imdbID: "3", Title: "Film 3", Poster: "https://via.placeholder.com/200", Year: "2020", Category: "Comedy", Likes: 0, Dislikes: 0 },
-    // Ajoute d'autres films ici
-];
+const API_KEY = "aeea8a9b"; 
+const API_URL = `https://www.omdbapi.com/?apikey=${API_KEY}&s=movie`;
 
 const MovieList = () => {
-    const [movies, setMovies] = useState<Movie[]>(initialMovies);
+    const [movies, setMovies] = useState<Movie[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [page, setPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(4);
+    const [loading, setLoading] = useState(false);
 
-    // Extraire les catégories uniques des films
-    const extractCategories = () => {
-        const movieCategories: string[] = Array.from(new Set(movies.map((movie) => movie.Category)));
+    //  Fonction pour récupérer la liste des films et ensuite récupérer les détails
+    useEffect(() => {
+        setLoading(true);
+        fetch(API_URL)
+            .then((res) => res.json())
+            .then(async (data) => {
+                if (data.Search) {
+                    // Liste de films avec seulement ID et titre
+                    const movieList = data.Search;
+
+                    // Récupérer les détails pour chaque film avec un deuxième appel API
+                    const detailedMovies: Movie[] = await Promise.all(
+                        movieList.map(async (movie: any) => {
+                            const detailsRes = await fetch(
+                                `https://www.omdbapi.com/?apikey=${API_KEY}&i=${movie.imdbID}`
+                            );
+                            const details = await detailsRes.json();
+
+                            return {
+                                imdbID: movie.imdbID,
+                                Title: movie.Title,
+                                Poster: movie.Poster !== "N/A" ? movie.Poster : "https://via.placeholder.com/200",
+                                Year: movie.Year,
+                                Genre: details.Genre || "Unknown", 
+                                Likes: 0,
+                                Dislikes: 0,
+                            };
+                        })
+                    );
+
+                    setMovies(detailedMovies);
+                    extractCategories(detailedMovies);
+                }
+            })
+            .finally(() => setLoading(false));
+    }, []);
+
+    //  Extraire les catégories uniques
+    const extractCategories = (moviesList: Movie[]) => {
+        const movieCategories: string[] = Array.from(new Set(moviesList.map((movie) => movie.Genre)));
         setCategories(movieCategories);
     };
 
-    // Filtrer les films par catégorie sélectionnée
-    const filteredMovies = movies.filter((movie) =>
-        selectedCategories.length === 0 || selectedCategories.includes(movie.Category)
+    //  Filtrer les films par catégorie
+    const filteredMovies = movies.filter(
+        (movie) => selectedCategories.length === 0 || selectedCategories.includes(movie.Genre)
     );
 
-    // Pagination
+    //  Pagination
     const paginatedMovies = filteredMovies.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
-    // Fonction pour supprimer un film
+    //  Supprimer un film
     const handleDelete = (imdbID: string) => {
         const newMovies = movies.filter((movie) => movie.imdbID !== imdbID);
         setMovies(newMovies);
-        // Mettre à jour les catégories si nécessaire
-        extractCategories();
+        extractCategories(newMovies);
     };
 
-    // Fonction pour toggler like/dislike
+    // Toggle Like/Dislike
     const toggleLikeDislike = (imdbID: string, type: "like" | "dislike") => {
         setMovies((prevMovies) =>
             prevMovies.map((movie) =>
@@ -71,45 +97,31 @@ const MovieList = () => {
         );
     };
 
-    // Fonction pour gérer la sélection/désélection des catégories
-    const handleCategoryChange = (category: string) => {
-        setSelectedCategories((prevSelected) =>
-            prevSelected.includes(category)
-                ? prevSelected.filter((cat) => cat !== category)
-                : [...prevSelected, category]
-        );
-    };
+    
 
-    // Fonction pour changer la page
+    // On gèrer la pagination
     const handlePageChange = (direction: "next" | "prev") => {
         setPage((prevPage) => (direction === "next" ? prevPage + 1 : prevPage - 1));
     };
 
-    // Exécuter l'extraction des catégories au démarrage
-    useEffect(() => {
-        extractCategories();
-    }, [movies]);
-
     return (
-        <div style={{ textAlign: "center" }}>
+        <div style={{ textAlign: "center", padding: "20px" }}>
             {/* Filtre par catégorie */}
             <div>
                 <label>Filtrer par catégorie: </label>
-                <select multiple onChange={(e) => handleCategoryChange(e.target.value)}>
-                    {categories.map((category) => (
-                        <option key={category} value={category}>
-                            {category}
-                        </option>
-                    ))}
-                </select>
+                <CategoryFilter 
+    categories={categories} 
+    selectedCategories={selectedCategories} 
+    setSelectedCategories={setSelectedCategories} 
+/>
             </div>
 
             {/* Liste des films */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "20px", justifyContent: "center" }}>
-                {paginatedMovies.map((movie) => {
-                    // Vérifier si une image est associée dans movieImages, sinon utiliser une image par défaut
-                    const posterPath = movieImages[movie.Title] || "https://via.placeholder.com/200";
-                    return (
+            {loading ? (
+                <p>Chargement des films...</p>
+            ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "20px", justifyContent: "center" }}>
+                    {paginatedMovies.map((movie) => (
                         <div
                             key={movie.imdbID}
                             style={{
@@ -120,19 +132,15 @@ const MovieList = () => {
                                 borderRadius: "10px",
                             }}
                         >
-                            <img
-                                src={posterPath}
-                                alt={movie.Title}
-                                style={{ width: "100%", borderRadius: "10px" }}
-                            />
+                            <img src={movie.Poster} alt={movie.Title} style={{ width: "100%", borderRadius: "10px" }} />
                             <h3 style={{ fontWeight: "bold" }}>{movie.Title}</h3>
                             <p>📅 {movie.Year}</p>
-                            <p>Catégorie: {movie.Category}</p>
+                            <p>Catégorie: {movie.Genre}</p>
 
-                            {/* Boutons de suppression et like/dislike */}
-                            <div>
-                                <button onClick={() => handleDelete(movie.imdbID)}>Supprimer</button>
-                            </div>
+                            {/*  Bouton supprimer */}
+                            <button onClick={() => handleDelete(movie.imdbID)}>Supprimer</button>
+
+                            {/* Like/Dislike */}
                             <div style={{ marginTop: "10px", display: "flex", justifyContent: "center" }}>
                                 <button onClick={() => toggleLikeDislike(movie.imdbID, "like")}>👍 {movie.Likes}</button>
                                 <button onClick={() => toggleLikeDislike(movie.imdbID, "dislike")}>👎 {movie.Dislikes}</button>
@@ -142,7 +150,7 @@ const MovieList = () => {
                             <div style={{ marginTop: "10px", width: "100%", backgroundColor: "#ccc", height: "5px", borderRadius: "10px" }}>
                                 <div
                                     style={{
-                                        width: `${(movie.Likes / (movie.Likes + movie.Dislikes)) * 100}%`,
+                                        width: `${movie.Likes + movie.Dislikes > 0 ? (movie.Likes / (movie.Likes + movie.Dislikes)) * 100 : 0}%`,
                                         backgroundColor: "green",
                                         height: "100%",
                                         borderRadius: "10px",
@@ -150,11 +158,11 @@ const MovieList = () => {
                                 />
                             </div>
                         </div>
-                    );
-                })}
-            </div>
+                    ))}
+                </div>
+            )}
 
-            {/* Pagination */}
+            {/*  Pagination */}
             <div>
                 <button onClick={() => handlePageChange("prev")} disabled={page === 1}>
                     Précédent
@@ -162,15 +170,11 @@ const MovieList = () => {
                 <button onClick={() => handlePageChange("next")} disabled={page * itemsPerPage >= filteredMovies.length}>
                     Suivant
                 </button>
-
-                <div>
-                    <label>Nombre d'éléments par page: </label>
-                    <select onChange={(e) => setItemsPerPage(Number(e.target.value))} value={itemsPerPage}>
-                        <option value={4}>4</option>
-                        <option value={8}>8</option>
-                        <option value={12}>12</option>
-                    </select>
-                </div>
+                <select onChange={(e) => setItemsPerPage(Number(e.target.value))} value={itemsPerPage}>
+                    <option value={4}>4</option>
+                    <option value={8}>8</option>
+                    <option value={12}>12</option>
+                </select>
             </div>
         </div>
     );
